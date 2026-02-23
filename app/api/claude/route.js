@@ -15,7 +15,7 @@ export async function POST(req) {
         max_tokens: 1200,
         messages,
         tools: useSearch ? [{
-          name: "browser.search",
+          name: "browser_search",
           description: "Search the web for live internship postings",
           input_schema: {
             type: "object",
