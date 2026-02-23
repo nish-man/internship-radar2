@@ -1,4 +1,5 @@
-import Head from "next/head";
+
+"use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ════════════════════════════════════════════════════════════
