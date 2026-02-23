@@ -300,10 +300,7 @@ export default function RadarApp() {
 
   return (
     <>
-      <Head>
-        <title>Internship Radar · Nishant</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-      </Head>
+     
 
       {/* ── NOISE TEXTURE overlay ── */}
       <div style={{
