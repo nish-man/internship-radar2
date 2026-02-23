@@ -53,15 +53,16 @@ async function searchTrack(track) {
 
   const msg = `Today is ${date}.
 
-Search for internship job postings live right now on LinkedIn, Wellfound, Otta, Glassdoor, and company career pages. Focus only on postings published in the last 24 hours.
+Search for internship job postings live right now on LinkedIn, Wellfound, Otta, Glassdoor, and company career pages. Focus on postings published in the last 72 hours.
+.
 
 Search terms: ${kw}
-Target: MBA-level roles, summer 2026, London or remote-friendly, suitable for a student graduating 2027.
+Target: MBA-level or postgraduate internship roles suitable for summer 2026 or flexible start dates, London or remote-friendly, suitable for a student graduating 2027.
 
 Return ONLY a raw JSON array — no markdown, no code fences, no explanation:
 [{"company":"Name","role":"Exact Job Title","link":"https://...","contact":"recruiter or founder name if found, else empty string","details":"2-3 sentences about the company and what this role involves","sector":"e.g. Enterprise AI / Fintech / Climate Tech","vcThesis":"if VC fund, their stated investment thesis, else empty string"}]
 
-Only include genuine postings from the last 24 hours. Maximum 5 results. If none found return [].`;
+Only include postings that appear recently open and currently accepting applications. Maximum 15 results. If none found return [].`;
 
   const raw = await askClaude([{ role: "user", content: msg }], true);
   try {
