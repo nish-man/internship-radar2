@@ -60,7 +60,19 @@ Search terms: ${kw}
 Target: MBA-level or postgraduate internship roles suitable for summer 2026 or flexible start dates, London or remote-friendly, suitable for a student graduating 2027.
 
 Return ONLY a raw JSON array — no markdown, no code fences, no explanation:
-[{"company":"Name","role":"Exact Job Title","link":"https://...","contact":"recruiter or founder name if found, else empty string","details":"2-3 sentences about the company and what this role involves","sector":"e.g. Enterprise AI / Fintech / Climate Tech","vcThesis":"if VC fund, their stated investment thesis, else empty string"}]
+
+IMPORTANT:
+The "link" MUST be the actual job posting page URL where the role is publicly listed.
+DO NOT generate or guess apply links.
+DO NOT link to the company homepage.
+Use only:
+• LinkedIn job post URLs
+• Otta job pages
+• Wellfound role listings
+• Official company careers pages
+If a verified posting URL cannot be found, return an empty string "" for link.
+
+[{"company":"Name","role":"Exact Job Title","link":"Verified public posting URL","contact":"recruiter or founder name if found, else empty string","details":"2-3 sentences about the company and what this role involves","sector":"e.g. Enterprise AI / Fintech / Climate Tech","vcThesis":"if VC fund, their stated investment thesis, else empty string"}]
 
 Only include postings that appear recently open and currently accepting applications. Maximum 15 results. If none found return [].`;
 
