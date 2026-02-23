@@ -607,7 +607,7 @@ function Card({ item, index, open, onToggle, copied, onCopy, pushing, pushed, on
             <span style={{ fontSize: 11, color: "var(--text3)" }}>👤 {item.contact}</span>
           )}
           <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
-            {item.link && (
+            {item.link && item.link.startsWith("http") && (
               <a href={item.link} target="_blank" rel="noreferrer"
                 onClick={e => e.stopPropagation()}
                 style={{ fontSize: 12, color: c, fontWeight: 600, opacity: 0.9 }}>
