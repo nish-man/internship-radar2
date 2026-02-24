@@ -1,47 +1,52 @@
-// /api/jobs.js — v3 FIXED
-// Fixed: removed Adzuna category param (was causing all 400 errors)
-// Fixed: graceful failures — one broken source won't kill everything
-// Fixed: always returns 200 with debug info so you can diagnose from browser
-// Sources: Reed UK API + Adzuna UK API
+// /api/jobs.js — v4
+// Fix: search terms were too specific ("MBA 2026" not in job postings)
+// Now uses broad terms, scores for relevance after fetching
 
 const SEVENTY_TWO_HOURS = 72 * 60 * 60 * 1000;
 
+// Broad Reed searches — job boards don't tag posts "MBA 2026"
 const REED_SEARCHES = {
   strategy: [
-    "strategy intern MBA London 2026",
-    "corporate strategy internship summer 2026 London",
+    "strategy intern London",
+    "corporate strategy internship London",
+    "strategy analyst intern London",
   ],
   ceo_office: [
+    "chief of staff London",
     "chief of staff intern London",
-    "CEO office intern startup London",
+    "founder office intern London",
+    "business operations intern London startup",
   ],
   pm: [
-    "product manager intern MBA London 2026",
-    "associate product manager internship London 2026",
+    "product manager intern London",
+    "product management internship London",
+    "associate product manager London",
   ],
   vc: [
-    "venture capital intern London 2026",
-    "investment intern VC fund London MBA",
+    "venture capital intern London",
+    "investment intern London",
+    "VC analyst London",
+    "private equity intern London",
   ],
 };
 
-// NOTE: No category param — it was causing Adzuna to return 400 HTML error pages
+// Broad Adzuna searches — same principle
 const ADZUNA_SEARCHES = {
   strategy: [
-    "strategy intern MBA London 2026",
+    "strategy intern London",
     "corporate strategy internship London",
   ],
   ceo_office: [
-    "chief of staff intern London startup",
-    "chief of staff MBA internship London",
+    "chief of staff London",
+    "chief of staff internship London",
   ],
   pm: [
-    "product manager intern MBA London 2026",
-    "product management internship summer 2026 London",
+    "product manager intern London",
+    "product management internship London",
   ],
   vc: [
-    "venture capital intern London MBA 2026",
-    "VC investment intern fund London",
+    "venture capital intern London",
+    "investment analyst intern London",
   ],
 };
 
@@ -49,8 +54,8 @@ async function reedSearch(keywords, apiKey) {
   const url = new URL("https://www.reed.co.uk/api/1.0/search");
   url.searchParams.set("keywords",             keywords);
   url.searchParams.set("locationName",         "London");
-  url.searchParams.set("distancefromlocation", "10");
-  url.searchParams.set("resultsToTake",        "8");
+  url.searchParams.set("distancefromlocation", "15");
+  url.searchParams.set("resultsToTake",        "10");
 
   const b64 = Buffer.from(`${apiKey}:`).toString("base64");
   const res = await fetch(url.toString(), {
@@ -60,19 +65,25 @@ async function reedSearch(keywords, apiKey) {
 
   if (!res.ok) {
     const t = await res.text();
-    throw new Error(`Reed ${res.status}: ${t.slice(0, 150)}`);
+    throw new Error(`Reed ${res.status}: ${t.slice(0, 200)}`);
   }
 
   const data = await res.json();
+  console.log(`Reed "${keywords}": ${(data.results||[]).length} raw results`);
+
   return (data.results || []).map(r => ({
     title:   r.jobTitle     || "",
     company: r.employerName || "",
     link:    r.jobUrl       || `https://www.reed.co.uk/jobs/${r.jobId}`,
-    snippet: (r.jobDescription || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300),
+    snippet: (r.jobDescription || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300),
     salary:  r.minimumSalary
                ? `£${Math.round(r.minimumSalary/1000)}k–£${Math.round((r.maximumSalary||r.minimumSalary)/1000)}k`
                : null,
-    date:    r.date  || null,
+    date:    r.date   || null,
     source:  "reed",
   }));
 }
@@ -84,9 +95,9 @@ async function adzunaSearch(what, appId, appKey) {
   url.searchParams.set("what",             what);
   url.searchParams.set("where",            "London");
   url.searchParams.set("max_days_old",     "3");
-  url.searchParams.set("results_per_page", "8");
+  url.searchParams.set("results_per_page", "10");
   url.searchParams.set("sort_by",          "date");
-  // NO category param — this was the bug causing 400 errors
+  // NO category param — causes 400
 
   const res = await fetch(url.toString(), {
     signal: AbortSignal.timeout(12000),
@@ -94,15 +105,21 @@ async function adzunaSearch(what, appId, appKey) {
 
   if (!res.ok) {
     const t = await res.text();
-    throw new Error(`Adzuna ${res.status}: ${t.slice(0, 150)}`);
+    throw new Error(`Adzuna ${res.status}: ${t.slice(0, 200)}`);
   }
 
   const data = await res.json();
+  console.log(`Adzuna "${what}": ${(data.results||[]).length} raw results`);
+
   return (data.results || []).map(r => ({
     title:   r.title                 || "",
     company: r.company?.display_name || "",
     link:    r.redirect_url          || "",
-    snippet: (r.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300),
+    snippet: (r.description || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300),
     salary:  r.salary_min
                ? `£${Math.round(r.salary_min/1000)}k–£${Math.round((r.salary_max||r.salary_min)/1000)}k`
                : null,
@@ -112,7 +129,7 @@ async function adzunaSearch(what, appId, appKey) {
 }
 
 function isRecent(dateStr) {
-  if (!dateStr) return true;
+  if (!dateStr) return true; // no date = include it
   try { return (Date.now() - new Date(dateStr).getTime()) < SEVENTY_TWO_HOURS; }
   catch { return true; }
 }
@@ -131,11 +148,16 @@ function dedupe(items) {
   });
 }
 
-const GOOD = ["intern","internship","placement","summer","mba","graduate","2026"];
+// Positive signals — we want intern/placement/grad roles
+const BOOST  = ["intern","internship","placement","graduate","summer","junior","entry"];
+// Negative signals — skip senior/permanent roles
+const DEMOTE = ["senior","head of","director","vp ","vice president","manager,","lead,","permanent","full-time permanent"];
+
 function score(item) {
   const t = `${item.title} ${item.snippet}`.toLowerCase();
   let s = 0;
-  GOOD.forEach(w => { if (t.includes(w)) s++; });
+  BOOST.forEach(w  => { if (t.includes(w)) s += 2; });
+  DEMOTE.forEach(w => { if (t.includes(w)) s -= 3; });
   if (item.date)   s++;
   if (item.salary) s++;
   return s;
@@ -158,20 +180,19 @@ export default async function handler(req, res) {
   if (!adzunaId)  missing.push("ADZUNA_APP_ID");
   if (!adzunaKey) missing.push("ADZUNA_APP_KEY");
 
-  // Reed
+  // Reed — run all queries for this track
   if (reedKey) {
-    for (const kw of (REED_SEARCHES[trackId] || []).slice(0, 2)) {
+    for (const kw of (REED_SEARCHES[trackId] || [])) {
       try {
         const hits = await reedSearch(kw, reedKey);
         all.push(...hits);
-        console.log(`Reed "${kw}": ${hits.length} hits`);
       } catch(e) {
-        errors.push(`Reed: ${e.message}`);
+        errors.push(`Reed "${kw}": ${e.message}`);
         console.error("Reed failed:", e.message);
       }
     }
   } else {
-    errors.push("Reed skipped — REED_API_KEY missing");
+    errors.push("Reed skipped — REED_API_KEY not set");
   }
 
   // Adzuna
@@ -180,9 +201,8 @@ export default async function handler(req, res) {
       try {
         const hits = await adzunaSearch(kw, adzunaId, adzunaKey);
         all.push(...hits);
-        console.log(`Adzuna "${kw}": ${hits.length} hits`);
       } catch(e) {
-        errors.push(`Adzuna: ${e.message}`);
+        errors.push(`Adzuna "${kw}": ${e.message}`);
         console.error("Adzuna failed:", e.message);
       }
     }
@@ -193,10 +213,11 @@ export default async function handler(req, res) {
   const recent  = all.filter(r => isRecent(r.date));
   const deduped = dedupe(recent);
   const sorted  = deduped.sort((a, b) => score(b) - score(a));
+  // Only return results with a positive score (genuinely intern-like)
+  const relevant = sorted.filter(r => score(r) > 0);
 
-  // Always 200 — debug block tells you exactly what happened
   return res.status(200).json({
-    results: sorted.slice(0, 12),
+    results: relevant.slice(0, 12),
     debug: {
       trackId,
       missing_keys:     missing,
@@ -204,7 +225,8 @@ export default async function handler(req, res) {
       total_raw:        all.length,
       after_72h_filter: recent.length,
       after_dedupe:     deduped.length,
-      returned:         Math.min(sorted.length, 12),
+      after_scoring:    relevant.length,
+      returned:         Math.min(relevant.length, 12),
     },
   });
 }
