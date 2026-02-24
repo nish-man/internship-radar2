@@ -1,61 +1,117 @@
-// /api/jobs.js — v4
-// Fix: search terms were too specific ("MBA 2026" not in job postings)
-// Now uses broad terms, scores for relevance after fetching
+// /api/jobs.js — v5
+// Searches exact MBA-level job titles across Reed + Adzuna
+// Covers: VC, Strategy, CoS, PM, Growth, GTM, Program Manager
 
 const SEVENTY_TWO_HOURS = 72 * 60 * 60 * 1000;
 
-// Broad Reed searches — job boards don't tag posts "MBA 2026"
+// Exact job titles that actually appear in MBA internship postings
 const REED_SEARCHES = {
   strategy: [
-    "strategy intern London",
-    "corporate strategy internship London",
-    "strategy analyst intern London",
+    "strategy intern",
+    "strategy internship",
+    "corporate strategy intern",
+    "strategy associate intern",
+    "business strategy intern",
+    "strategic planning intern",
+    "management consulting intern",
+    "consulting intern",
   ],
   ceo_office: [
-    "chief of staff London",
-    "chief of staff intern London",
-    "founder office intern London",
-    "business operations intern London startup",
+    "chief of staff intern",
+    "chief of staff internship",
+    "CEO office intern",
+    "founder office intern",
+    "chief of staff associate",
+    "operations intern startup",
+    "program manager intern",
+    "programme manager intern",
+    "business operations intern",
+    "growth intern",
+    "GTM intern",
+    "go to market intern",
   ],
   pm: [
-    "product manager intern London",
-    "product management internship London",
-    "associate product manager London",
+    "product manager intern",
+    "product management intern",
+    "product management internship",
+    "associate product manager",
+    "product intern",
+    "product strategy intern",
+    "product operations intern",
+    "growth product manager intern",
   ],
   vc: [
-    "venture capital intern London",
-    "investment intern London",
-    "VC analyst London",
-    "private equity intern London",
+    "venture capital intern",
+    "venture capital internship",
+    "VC intern",
+    "investment analyst intern",
+    "investment associate intern",
+    "venture analyst intern",
+    "startup investor intern",
+    "private equity intern",
+    "growth equity intern",
   ],
 };
 
-// Broad Adzuna searches — same principle
 const ADZUNA_SEARCHES = {
   strategy: [
-    "strategy intern London",
-    "corporate strategy internship London",
+    "strategy intern",
+    "corporate strategy intern",
+    "management consulting intern",
+    "strategic planning intern",
+    "strategy associate intern",
   ],
   ceo_office: [
-    "chief of staff London",
-    "chief of staff internship London",
+    "chief of staff intern",
+    "chief of staff internship",
+    "program manager intern",
+    "growth intern",
+    "GTM intern",
+    "business operations intern startup",
+    "CEO office intern",
   ],
   pm: [
-    "product manager intern London",
-    "product management internship London",
+    "product manager intern",
+    "product management internship",
+    "associate product manager",
+    "product intern",
+    "product strategy intern",
   ],
   vc: [
-    "venture capital intern London",
-    "investment analyst intern London",
+    "venture capital intern",
+    "VC intern",
+    "investment analyst intern",
+    "investment associate intern",
+    "private equity intern",
   ],
 };
+
+// If a result contains ANY of these in the title it's immediately relevant
+const TITLE_MUST_INCLUDE = [
+  "intern","internship","placement","graduate scheme","associate",
+  "junior","analyst","trainee",
+];
+
+// Strong positive signals in title or snippet
+const BOOST_TITLE  = ["intern","internship","placement","summer","graduate","associate","junior","trainee","scheme"];
+const BOOST_TEXT   = ["mba","business school","graduate","summer 2026","internship","placement"];
+
+// These in the TITLE mean it's a senior perm role — skip it
+const DEMOTE_TITLE = [
+  "senior","head of","director","vp ","vice president",
+  "principal","partner","managing","cto","coo","cfo","ceo ",
+  "lead,","lead -","lead –","manager,","manager -",
+  "permanent","full-time","contract","freelance",
+];
 
 async function reedSearch(keywords, apiKey) {
   const url = new URL("https://www.reed.co.uk/api/1.0/search");
   url.searchParams.set("keywords",             keywords);
   url.searchParams.set("locationName",         "London");
-  url.searchParams.set("distancefromlocation", "15");
+  url.searchParams.set("distancefromlocation", "20");
   url.searchParams.set("resultsToTake",        "10");
+  // graduated=true filters for graduate/intern posts on Reed
+  url.searchParams.set("graduate",             "true");
 
   const b64 = Buffer.from(`${apiKey}:`).toString("base64");
   const res = await fetch(url.toString(), {
@@ -69,7 +125,7 @@ async function reedSearch(keywords, apiKey) {
   }
 
   const data = await res.json();
-  console.log(`Reed "${keywords}": ${(data.results||[]).length} raw results`);
+  console.log(`Reed "${keywords}": ${(data.results||[]).length} raw`);
 
   return (data.results || []).map(r => ({
     title:   r.jobTitle     || "",
@@ -79,7 +135,7 @@ async function reedSearch(keywords, apiKey) {
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 300),
+      .slice(0, 400),
     salary:  r.minimumSalary
                ? `£${Math.round(r.minimumSalary/1000)}k–£${Math.round((r.maximumSalary||r.minimumSalary)/1000)}k`
                : null,
@@ -97,7 +153,8 @@ async function adzunaSearch(what, appId, appKey) {
   url.searchParams.set("max_days_old",     "3");
   url.searchParams.set("results_per_page", "10");
   url.searchParams.set("sort_by",          "date");
-  // NO category param — causes 400
+  // what_or for broader matching
+  url.searchParams.set("what_or",          "intern internship placement graduate");
 
   const res = await fetch(url.toString(), {
     signal: AbortSignal.timeout(12000),
@@ -109,7 +166,7 @@ async function adzunaSearch(what, appId, appKey) {
   }
 
   const data = await res.json();
-  console.log(`Adzuna "${what}": ${(data.results||[]).length} raw results`);
+  console.log(`Adzuna "${what}": ${(data.results||[]).length} raw`);
 
   return (data.results || []).map(r => ({
     title:   r.title                 || "",
@@ -119,7 +176,7 @@ async function adzunaSearch(what, appId, appKey) {
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 300),
+      .slice(0, 400),
     salary:  r.salary_min
                ? `£${Math.round(r.salary_min/1000)}k–£${Math.round((r.salary_max||r.salary_min)/1000)}k`
                : null,
@@ -129,7 +186,7 @@ async function adzunaSearch(what, appId, appKey) {
 }
 
 function isRecent(dateStr) {
-  if (!dateStr) return true; // no date = include it
+  if (!dateStr) return true;
   try { return (Date.now() - new Date(dateStr).getTime()) < SEVENTY_TWO_HOURS; }
   catch { return true; }
 }
@@ -141,26 +198,40 @@ function dedupe(items) {
     if (!item.link || !item.title) return false;
     if (links.has(item.link)) return false;
     links.add(item.link);
-    const k = `${(item.company||"").toLowerCase().slice(0,20)}_${item.title.toLowerCase().slice(0,30)}`;
+    const k = `${(item.company||"").toLowerCase().slice(0,20)}_${item.title.toLowerCase().slice(0,35)}`;
     if (keys.has(k)) return false;
     keys.add(k);
     return true;
   });
 }
 
-// Positive signals — we want intern/placement/grad roles
-const BOOST  = ["intern","internship","placement","graduate","summer","junior","entry"];
-// Negative signals — skip senior/permanent roles
-const DEMOTE = ["senior","head of","director","vp ","vice president","manager,","lead,","permanent","full-time permanent"];
-
 function score(item) {
-  const t = `${item.title} ${item.snippet}`.toLowerCase();
+  const title   = (item.title   || "").toLowerCase();
+  const snippet = (item.snippet || "").toLowerCase();
+  const full    = `${title} ${snippet}`;
   let s = 0;
-  BOOST.forEach(w  => { if (t.includes(w)) s += 2; });
-  DEMOTE.forEach(w => { if (t.includes(w)) s -= 3; });
+
+  // Hard demote — title signals it's a senior/perm role
+  if (DEMOTE_TITLE.some(w => title.includes(w))) return -99;
+
+  // Title boosts are worth more
+  BOOST_TITLE.forEach(w => { if (title.includes(w))   s += 3; });
+  // Text boosts
+  BOOST_TEXT.forEach(w  => { if (snippet.includes(w)) s += 1; });
+
+  // London signal
+  if (full.includes("london")) s += 1;
+
+  // Has real data
   if (item.date)   s++;
   if (item.salary) s++;
+
   return s;
+}
+
+function isRelevantTitle(title) {
+  const t = title.toLowerCase();
+  return TITLE_MUST_INCLUDE.some(w => t.includes(w));
 }
 
 export default async function handler(req, res) {
@@ -210,14 +281,16 @@ export default async function handler(req, res) {
     errors.push("Adzuna skipped — credentials missing");
   }
 
-  const recent  = all.filter(r => isRecent(r.date));
-  const deduped = dedupe(recent);
-  const sorted  = deduped.sort((a, b) => score(b) - score(a));
-  // Only return results with a positive score (genuinely intern-like)
-  const relevant = sorted.filter(r => score(r) > 0);
+  // Filter pipeline
+  const recent   = all.filter(r => isRecent(r.date));
+  const deduped  = dedupe(recent);
+  const scored   = deduped
+    .map(r => ({ ...r, _score: score(r) }))
+    .filter(r => r._score > 0 && isRelevantTitle(r.title))
+    .sort((a, b) => b._score - a._score);
 
   return res.status(200).json({
-    results: relevant.slice(0, 12),
+    results: scored.slice(0, 15),
     debug: {
       trackId,
       missing_keys:     missing,
@@ -225,8 +298,10 @@ export default async function handler(req, res) {
       total_raw:        all.length,
       after_72h_filter: recent.length,
       after_dedupe:     deduped.length,
-      after_scoring:    relevant.length,
-      returned:         Math.min(relevant.length, 12),
+      after_scoring:    scored.length,
+      returned:         Math.min(scored.length, 15),
+      // Show top 5 titles so you can see what's coming through
+      sample_titles:    scored.slice(0, 5).map(r => `[${r._score}] ${r.title} @ ${r.company}`),
     },
   });
 }
